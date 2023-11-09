@@ -7,6 +7,19 @@
     - [Infinite Buffer](#infinite-buffer)
     - [Finite Buffer](#finite-buffer)
 - [Readers and Writers](#readers-and-writers)
+    - [Solution with starvation](#solution-with-starvation)
+    - [No starvation solution](#no-starvation-solution)
+    - [Writers prioritized](#solution-with-writers-prioritized)
+- [No-starve Mutex](#no-starve-mutex)
+- [Dining Philosophers](#dining-philosophers)
+    - [Limiting active philosophers](#limiting-the-number-of-active-philosophers)
+    - [Changing order of pick for one](#one-philosopher-picks-the-left-first)
+    - [Tanenbaum's solution (starvation prone)](#tanenbaums-solution)
+- [Cigarettes Smokers](#cigarette-smokers)
+- [The Dining Savages](#the-dining-savages)
+- [The Barbershop](#the-barbershop)
+- [FIFO Barbershop](#fifo-barbershop)
+- [Hilzer's Barbershop](#hilzers-barbershop)
 
 ## Barrier
 
@@ -618,3 +631,660 @@ void pusher_tobacco(){
 /* Similar code for pusher_paper and pusher_match */
 ```
 
+## The Dining Savages
+
+A number of savages consume from a pot that can hold a maximum of *m* servings, when a savage wants to eat he consumes from the pot if it isn't empty, otherwise he wakes up the cook and waits until the cook refills the pot (puts *m* servings in it)
+
+```cpp
+food = 0
+mutex = semaphore(1)
+empty = semaphore(0)        // is the pot empty?
+full = semaphore(0)         // is the pot full?
+
+void savage(){
+    while (true){
+        mutex.wait()
+        if (food == 0){     // if no serving left signal the cook
+            empty.signal()
+            full.wait()     // wait until the cook finishes, this blocks all 
+                            // other savages
+        } 
+        --food
+        get_serving()
+        mutex.signal()
+        eat()
+    }
+}
+
+void cook(){
+    while (true){
+        empty.wait()
+        serve(m)
+        food = m            // safe because a waiting savage holds the lock 
+        full.signal()
+    }
+}
+```
+
+## The Barbershop
+
+In this problem, there's a barber shop with a maximum of n seats. Customers come and sit on an empty sit if available otherwise they leave. The barber sleeps if there are no customers in the shop so when a customer arrives he'll wakeup the barber.
+
+```cpp
+n = 4
+customers = 0                   // number of customers in the shop currently
+// These four used for rendezvous
+barber = semaphore(0)           // customer waits while barber wakes up
+customer = semaphore(0)         // barber waits on a customer coming
+barber_done = semaphore(0)      // barber done?
+customer_done = semaphore(0)    // customer done
+
+mutex = semaphore(1)
+
+void customer(){
+    mutex.wait()
+    if (customers == n){
+        mutex.signal()
+        return
+    }
+    mutex.signal()
+
+    // Rendezvous 1, wait for barber to wakeup
+    customer.signal()
+    barber.wait()
+
+    /* Get haircut */
+
+    // Rendezvous 2, wait for barber to finish
+    customer_done.signal()
+    barber_done.wait()
+
+    // leave
+    mutex.wait()
+    --customers
+    mutex.signal()
+}
+
+void barber(){
+    while (true){
+        customer.wait()
+        barber.signal()
+
+        /* Cut hair */
+
+        barber_done.signal()
+        customer_done.wait()
+    }
+}
+```
+
+## FIFO Barbershop
+
+In this variation we've to serve the customers in the order they come. We can queue a to do this, where each thread creates its own semaphore and pushes it onto the queue and waits on it, the barber will signal on the semaphore at the front of the queue
+
+```cpp
+n = 4
+queue = {}              
+customer = semaphore(0)
+barber_done = semaphore(0)
+customer_done = semaphore(0)
+mutex = semaphore(1)
+
+void customer(){
+    sem = semaphore(0)
+
+    mutex.wait()
+    if (customers == n){
+        mutex.signal()
+        return
+    }
+    ++customers
+    queue.push(sem)
+    mutex.signal()
+
+    customer.signal()
+    sem.wait()
+
+    /* Get haircut */
+
+    customer_done.signal()
+    barber_done.wait()
+
+    mutex.wait()
+    --customers
+    mutex.signal()
+}
+
+void barber(){
+    while (true){
+        customer.wait()
+        mutex.wait()
+        sem = q.front()
+        q.pop()
+        mutex.signal()
+
+        sem.signal()
+
+        /* Cut hair */
+
+        barber_done.signal()
+        customer_done.wait()
+    }
+}
+```
+
+## Hilzer's Barbershop
+
+Our barbershop has 4 chairs, 4 barbers, and a waiting
+area that can accommodate 4 customers on a sofa and that has
+standing room for additional customers. Fire codes limit the total
+number of customers in the shop to 20.  
+A customer will not enter the shop if it is filled to capacity with
+other customers. Once inside, the customer takes a seat on the sofa
+or stands if the sofa is filled. When a barber is free, the customer
+that has been on the sofa the longest is served and, if there are any
+standing customers, the one that has been in the shop the longest
+takes a seat on the sofa. When a customer’s haircut is finished,
+any barber can accept payment, but because there is only one cash
+register, payment is accepted for one customer at a time. The barbers divide their time among cutting hair, accepting payment, and
+sleeping in their chair waiting for a customer.
+
+In other words, the following synchronization constraints apply:  
+- Customers invoke the following functions in order: enterShop, sitOnSofa,
+getHairCut, pay.  
+- Barbers invoke cutHair and acceptPayment.  
+- Customers cannot invoke enterShop if the shop is at capacity.  
+- If the sofa is full, an arriving customer cannot invoke sitOnSofa.  
+- When a customer invokes getHairCut there should be a corresponding
+barber executing cutHair concurrently, and vice versa.  
+- It should be possible for up to three customers to execute getHairCut
+concurrently, and up to three barbers to execute cutHair concurrently.  
+- The customer has to pay before the barber can acceptPayment.  
+- The barber must acceptPayment before the customer can exit.  
+
+```cpp
+capacity = 20                   // max shop capacity
+sofa_queue = {}                 // customers on the sofa
+waiting_queue = {}              // customers standing
+customers = 0                   // total customers in the shop
+customer = semaphore(0)         // customer available?
+customer_done = semaphore(0)    
+barber_done = semaphore(0)
+count = semaphore(1)            // to protect access to customers and queues
+register = semaphore(1)         // since only one can pay at a time
+payed = semaphore(0)            // customer has payed
+accepted = semaphore(0)         // payment has been accepted
+
+void customer(){
+    // semaphore on which the customer will wait for 
+    // a barber to signal
+    sem = semaphore(0)
+
+    mutex.wait()
+    if (capacity == 20){
+        mutex.signal()
+        return
+    }
+    ++capacity
+    // sit on sofa if not full and no one else is standing
+    if (sofa_queue.size() < 4 && waiting_queue.empty()){
+        sofa_queue.push(sem)
+        customer.signal()               // and signal barber
+    } else {    // otherwise stand
+        waiting_queue.push(sem) 
+    } 
+    mutex.signal()
+
+    // wait for barber to be ready (either you signalled yourself
+    // or someone leaving did it for you)
+    sem.wait()
+
+    /* Get haircut */
+
+    customer_done.signal()
+    barber_done.wait()
+
+    // do payment
+    register.wait()
+    pay()
+    payed.signal()
+    accepted.wait()
+    register.signal()
+
+    mutex.wait()
+    --capacity
+    // if someone is standing give him seat on sofa
+    if (!waiting_queue.empty()){
+        sofa_queue.push(waiting_queue.front())
+        waiting_queue.pop()
+        customer.signal()       // and signal barber
+    }
+    mutex.signal()
+}
+
+void barber(){
+    while (true){
+        customer.wait()
+        mutex.wait()
+        sem = sofa_queue.front()
+        sofa_queue.pop()
+        mutex.signal()
+
+        sem.signal()
+        /* Cut hair */
+
+        barber_done.signal();
+        customer_done.wait();
+
+        payed.wait()
+        accept_payment()
+        accepted_payment.signal()
+    }
+}
+```
+
+## Santa Claus 
+
+Stand Claus sleeps in his shop at the North Pole and can only be
+awakened by either  
+- all nine reindeer being back from their vacation in the South Pacific, 
+- or some of the elves having difficulty making toys;   
+
+To allow Santa to get some sleep, the elves can only
+wake him when three of them have problems. When three elves are
+having their problems solved, any other elves wishing to visit Santa
+must wait for those elves to return. If Santa wakes up to find three
+elves waiting at his shop’s door, along with the last reindeer having
+come back from the tropics, Santa has decided that the elves can
+wait until after Christmas, because it is more important to get his
+sleigh ready. (It is assumed that the reindeer do not want to leave
+the tropics, and therefore they stay there until the last possible moment.) The last reindeer to arrive must get Santa while the others
+wait in a warming hut before being harnessed to the sleigh.  
+
+Here are some addition specifications:  
+- After the ninth reindeer arrives, Santa must invoke prepareSleigh, and
+then all nine reindeer must invoke getHitched.
+- After the third elf arrives, Santa must invoke helpElves. Concurrently,
+all three elves should invoke getHelp.
+- All three elves must invoke getHelp before any additional elves enter
+(increment the elf counter).  
+
+Santa should run in a loop so he can help many sets of elves. We can assume
+that there are exactly 9 reindeer, but there may be any number of elves.
+
+```cpp
+
+santa = semaphore(0)
+mutex = semaphore(1)
+reindeer = 0
+elf = 0
+elves = semaphore(1)     // mutex to restrict more than 3 elves from entering
+sleigh = semaphore(0)    // to signal reindeers
+
+void santa(){
+    while (true){
+        // wait for either 9 reindeers or 3 elves to signal
+        santa.wait()
+        
+        mutex.wait()
+        // prioritize reindeers
+        if (reindeer >- 9){        
+            prepareSleigh()
+            sleigh.signal(9)
+            reindeer -= 9
+        } else {
+            helpElves()
+        }
+        mutex.signal()
+    }
+}
+
+void elf(){
+    elves.wait()        
+    mutex.wait()
+    ++elf
+    if (elf == 3)
+        santa.signal()      // don't allow more than 3 elves to enter
+    else 
+        elves.signal()
+    mutex.signal()
+
+    getHelp()
+
+    mutex.wait()
+    --elf
+    if (elf == 0)
+        elves.signal()      // until all 3 have gotten help
+    mutex.signal()
+}
+
+void reindeer(){
+    mutex.wait()
+    ++reindeer
+    if (reindeer == 9)
+        santa.signal()
+    mutex.signal()
+
+    sleigh.wait()
+    getHitched()
+}   
+```
+
+## Building H<sub>2</sub>O
+
+There are two kinds of threads, oxygen and hydrogen. In order to assemble
+these threads into water molecules, we have to create a barrier that makes each
+thread wait until a complete molecule is ready to proceed.   
+As each thread passes the barrier, it should invoke bond. You must guarantee
+that all the threads from one molecule invoke bond before any of the threads
+from the next molecule do.   
+In other words:  
+- If an oxygen thread arrives at the barrier when no hydrogen threads are
+present, it has to wait for two hydrogen threads.
+- If a hydrogen thread arrives at the barrier when no other threads are
+present, it has to wait for an oxygen thread and another hydrogen thread.
+
+## Solution with an extra conductor thread
+
+```cpp
+oxygen_queue = semaphore(0)
+hydrogen_queue = semaphore(0)
+oxygen = semaphore(0)
+hydrogen = semaphore(0)
+bonded = semaphore(0)
+mutex = semaphore(1)
+done = 0
+
+void oxygen(){
+    oxygen.signal()
+    oxygen_queue.wait()
+    bond()
+
+    mutex.wait()
+    ++done
+    if (done == 3)
+        bonded.signal()
+    mutex.signal()
+}
+
+void hydrogen(){
+    hydrogen.signal()
+    hydrogen_queue.wait()
+
+    mutex.wait()
+    ++done
+    if (done == 3)
+        bonded.signal()
+    mutex.signal()
+}
+
+void conductor(){
+    while (true){
+        oxygen.wait()
+        hydrogen.wait()
+        hydrogen.wait()
+
+        // ready to make a molecule
+        oxygen_queue.signal()
+        hydrogen_queue.signal(2)
+
+        bonded.wait()
+        done = 0
+    }
+}
+```
+
+## Alternate solution
+
+```cpp
+oxygen = 0
+hydrogen = 0
+oxygen_queue = sempahore(0)
+hydrogen_queue = sempahore(0)
+mutex = semaphore(1)
+barrier = semaphore(3)              // resets after hitting 0
+
+void oxygen(){
+    mutex.wait()
+    ++oxygen
+    if (hydrogen >= 2){             // we can form a molecule
+        hydrogen -= 2
+        hydrogen_queue.signal(2)
+        --oxygen
+        oxygen_queue.signal()   
+        // we don't release mutex until all 3 bond
+    } else {
+        mutex.signal()
+    }
+
+    oxygen_queue.wait()
+    bond()
+
+    barrier.wait()
+    mutex.signal()                  // either oxygen will hold the mutex or another
+                                    // hydrogen which arrived last
+}
+
+void hydrogen(){
+    mutex.wait()
+    ++hydrogen
+    if (hydrogen >= 2 && oxygen >= 1){
+        hydrogen -= 2
+        hydrogen_queue.signal(2)
+        --oxygen
+        oxygen_queue.signal()
+    } else {
+        mutex.signal()
+    }
+
+    hydrogen_queue.wait()
+
+    bond()
+    barrier.wait()
+}
+```
+
+## River Crossing
+
+Somewhere near Redmond, Washington there is a rowboat that is used by
+both Linux hackers and Microsoft employees (serfs) to cross a river. The ferry
+can hold exactly four people; it won’t leave the shore with more or fewer. To
+guarantee the safety of the passengers, it is not permissible to put one hacker
+in the boat with three serfs, or to put one serf with three hackers. Any other
+combination is safe.  
+As each thread boards the boat it should invoke a function called board. You
+must guarantee that all four threads from each boatload invoke board before
+any of the threads from the next boatload do.  
+After all four threads have invoked board, exactly one of them should call
+a function named rowBoat, indicating that that thread will take the oars. It
+doesn’t matter which thread calls the function, as long as one does.
+
+```cpp
+hackers = 0
+serfs = 0
+mutex = semaphore(1)
+hacker_queue = semaphore(0)
+serf_queue = semaphore(0)
+barrier = semaphore(4)
+
+void hacker(){
+    wiil_unlock = false     // will this thread row the boat?
+    mutex.wait()
+    ++hackers
+    if (hackers >= 4){
+        hackers -= 4
+        hacker_queue.signal(4)
+        wiil_unlock = true
+    } else if (hackers >= 2 && serfs >= 2){
+        hackers -= 2
+        hacker_queue.signal(2)
+        serfs -= 2
+        serf_queue.signal(2)
+        will_unlock = true
+    } else {
+        mutex.signal()
+    }
+
+    hacker_queue.wait()
+    board()
+
+    barrier.wait()
+    if (will_unlock){       // the one rowing gets to unlock the mutex
+        rowBoat()
+        mutex.signal()
+    }
+}
+
+void serf(){
+    wiil_unlock = false
+    mutex.wait()
+    ++serfs
+    if (serfs >= 4){
+        serfs -= 4
+        serf_queue.signal(4)
+        wiil_unlock = true
+    } else if (hackers >= 2 && serfs >= 2){
+        hackers -= 2
+        hacker_queue.signal(2)
+        serfs -= 2
+        serf_queue.signal(2)
+        will_unlock = true
+    } else {
+        mutex.signal()
+    }
+
+    serf_queue.wait()
+    board()
+
+    barrier.wait()
+    if (will_unlock){
+        rowBoat()
+        mutex.signal()
+    }
+}
+```
+
+## The Roller Coaster
+
+Suppose there are n passenger threads and a car thread. The
+passengers repeatedly wait to take rides in the car, which can hold
+C passengers, where C < n. The car can go around the tracks only
+when it is full.  
+Here are some additional details:  
+- Passengers should invoke board and unboard.
+- The car should invoke load, run and unload.
+- Passengers cannot board until the car has invoked load
+- The car cannot depart until C passengers have boarded.
+- Passengers cannot unboard until the car has invoked unload
+
+```cpp
+c = /* car capacity */
+passengers = 0
+load = semaphore(0)
+car = semaphore(0)
+mutex = semaphore(1)
+unload = semaphore(0)
+ready = semaphore(0)
+
+void car(){
+    while (true){
+        load.signal(c)      // signal c customers
+        car.wait()          // wait for everyone to board
+
+        run()
+
+        unload.signal(c)    // signal c customers to unboard
+        ready.wait()        // wait for everyone to unboard
+    }
+}
+
+void passenger(){       
+    load.wait()
+    mutex.wait()
+    ++passengers
+    if (passengers == c)
+        car.signal()
+    mutex.signal()
+
+    unload.wait()           // wait for car to signal unloading
+
+    mutex.wait()
+    --passengers
+    if (passengers == 0)
+        ready.signal()
+    mutex.signal()
+}
+```
+
+## The Multi-Car Roller Coaster
+
+This solution does not generalize to the case where there is more than one car.
+In order to do that, we have to satisfy some additional constraints:  
+- Only one car can be boarding at a time.
+- Multiple cars can be on the track concurrently.
+- Since cars can’t pass each other, they have to unload in the same order
+they boarded.
+- All the threads from one carload must disembark before any of the threads
+from subsequent carloads.
+
+```cpp
+c = /* car capacity */
+curr_car = 0
+cars_mutex = semaphore(1)       // for protecting access to curr_car
+
+boarded = 0
+pass_mutex1 = semaphore(1)     
+unboarded = 0
+pass_mutex2 = semaphore(1)
+
+boarding_queue = semaphore(0)
+unboarding_queue = semaphore(0)
+all_boarded = semaphore(0)
+all_unboarded = semaphore(0)
+
+car_unboard_order = {}      // list of m semaphores for each car for boarding and unboarding order
+car_board_order = {}
+
+// Initially car 0's sems are unlocked
+car_unboard_order[0].signal()
+car_board_order[0].signal()
+
+void car(){
+    car_id = 0
+    cars_mutex.wait()           // assign id's in the order the cars board
+        car_id = curr_car++
+    cars_mutex.signal()
+
+    car_board_order[car_id].wait()
+    boarding_queue.signal(c)
+    
+    all_boarded.wait()          // wait for all passengers to board
+    car_board_order[(car_id + 1) % m].signal()
+
+    car_unboard_order[car_id].wait()                  // wait for unboarding turn
+    unboarding_queue.signal(c)
+
+    all_unboarded.wait()        // wait for everyone to unboard
+    car_unboard_order[(car_id + 1) % m].signal()      // allow next car in unboard order to unboard
+}
+
+void passenger(){
+    boarding_queue.wait()
+    pass_mutex1.wait()
+    ++boarded
+    if (boarded == c){
+        all_boarded.signal()
+        boarded = 0
+    }
+    pass_mutex1.signal()
+
+    unboarding_queue.wait()
+    pass_mutex2.wait()
+    ++unboarded
+    if (unboarded == c){
+        all_unboarded.signal()
+        unboarded = 0
+    }
+    pass_mutex2.signal()
+}
+```
