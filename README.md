@@ -1,25 +1,34 @@
 # Table of Contents
 
-- [Barrier](#barrier)
-- [Resuable Barrier](#reusable-barrier)
-- [Leaders and Followers (Two Queues)](#leaders-and-followers-two-queues)
-- [Producers and Consumers](#producers-and-consumers)
-    - [Infinite Buffer](#infinite-buffer)
-    - [Finite Buffer](#finite-buffer)
-- [Readers and Writers](#readers-and-writers)
-    - [Solution with starvation](#solution-with-starvation)
-    - [No starvation solution](#no-starvation-solution)
-    - [Writers prioritized](#solution-with-writers-prioritized)
-- [No-starve Mutex](#no-starve-mutex)
-- [Dining Philosophers](#dining-philosophers)
-    - [Limiting active philosophers](#limiting-the-number-of-active-philosophers)
-    - [Changing order of pick for one](#one-philosopher-picks-the-left-first)
-    - [Tanenbaum's solution (starvation prone)](#tanenbaums-solution)
-- [Cigarettes Smokers](#cigarette-smokers)
-- [The Dining Savages](#the-dining-savages)
-- [The Barbershop](#the-barbershop)
-- [FIFO Barbershop](#fifo-barbershop)
-- [Hilzer's Barbershop](#hilzers-barbershop)
+- [Classical Problems](#classical-problems)
+    - [Barrier](#barrier)
+    - [Resuable Barrier](#reusable-barrier)
+    - [Leaders and Followers (Two Queues)](#leaders-and-followers-two-queues)
+    - [Producers and Consumers](#producers-and-consumers)
+        - [Infinite Buffer](#infinite-buffer)
+        - [Finite Buffer](#finite-buffer)
+    - [Readers and Writers](#readers-and-writers)
+        - [Solution with starvation](#solution-with-starvation)
+        - [No starvation solution](#no-starvation-solution)
+        - [Writers prioritized](#solution-with-writers-prioritized)
+    - [No-starve Mutex](#no-starve-mutex)
+    - [Dining Philosophers](#dining-philosophers)
+        - [Limiting active philosophers](#limiting-the-number-of-active-philosophers)
+        - [Changing order of pick for one](#one-philosopher-picks-the-left-first)
+        - [Tanenbaum's solution (starvation prone)](#tanenbaums-solution)
+    - [Cigarettes Smokers](#cigarette-smokers)
+- [Less Classical Problems](#less-classical-problems)
+    - [The Dining Savages](#the-dining-savages)
+    - [The Barbershop](#the-barbershop)
+    - [FIFO Barbershop](#fifo-barbershop)
+    - [Hilzer's Barbershop](#hilzers-barbershop)
+    - [Santa Claus](#santa-claus)
+    - [Building H<sub>2</sub>O](#building-h2o)
+    - [River Crossing](#river-crossing)
+    - [The Roller Coaster](#the-roller-coaster)
+    - [The Multi-Car Roller Coaster](#the-multi-car-roller-coaster)
+
+# Classical Problems
 
 ## Barrier
 
@@ -631,6 +640,8 @@ void pusher_tobacco(){
 /* Similar code for pusher_paper and pusher_match */
 ```
 
+# Less Classical Problems
+
 ## The Dining Savages
 
 A number of savages consume from a pot that can hold a maximum of *m* servings, when a savage wants to eat he consumes from the pot if it isn't empty, otherwise he wakes up the cook and waits until the cook refills the pot (puts *m* servings in it)
@@ -970,7 +981,7 @@ void reindeer(){
 }   
 ```
 
-## Building H<sub>2</sub>O
+## Building H2O
 
 There are two kinds of threads, oxygen and hydrogen. In order to assemble
 these threads into water molecules, we have to create a barrier that makes each
@@ -984,7 +995,7 @@ present, it has to wait for two hydrogen threads.
 - If a hydrogen thread arrives at the barrier when no other threads are
 present, it has to wait for an oxygen thread and another hydrogen thread.
 
-## Solution with an extra conductor thread
+### Solution with an extra conductor thread
 
 ```cpp
 oxygen_queue = semaphore(0)
@@ -1034,7 +1045,7 @@ void conductor(){
 }
 ```
 
-## Alternate solution
+### Alternate solution
 
 ```cpp
 oxygen = 0
